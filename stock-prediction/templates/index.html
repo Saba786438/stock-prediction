@@ -1,0 +1,191 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StockVision | Market Analytics</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b1120;
+      color: #edf2ff;
+    }
+    header, main {
+      max-width: 1100px;
+      margin: auto;
+      padding: 24px;
+    }
+    header { border-bottom: 1px solid #263247; }
+    h1 { margin-bottom: 8px; }
+    .muted { color: #9ba9c4; }
+    .panel {
+      background: #141e30;
+      border: 1px solid #29364d;
+      border-radius: 14px;
+      padding: 20px;
+      margin: 18px 0;
+    }
+    input, button {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #42516b;
+      font-size: 16px;
+    }
+    input {
+      background: #0b1120;
+      color: white;
+      width: min(100%, 300px);
+    }
+    button {
+      background: #4f7cff;
+      color: white;
+      cursor: pointer;
+    }
+    .charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    .chart { min-width: 0; }
+    @media (max-width: 700px) {
+      .charts { grid-template-columns: 1fr; }
+      header, main { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>StockVision</h1>
+    <p class="muted">
+      Historical market analytics and ML-powered forecasting
+    </p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Analyze a stock</h2>
+      <form id="searchForm">
+        <input id="ticker" value="AAPL"
+               placeholder="Enter ticker, e.g. TCS.NS"
+               aria-label="Stock ticker" required>
+        <button type="submit">Analyze</button>
+      </form>
+      <p id="status" class="muted">Enter a ticker to begin.</p>
+    </section>
+
+    <section class="panel">
+      <h2 id="stockTitle">Stock analysis</h2>
+      <p id="summary" class="muted"></p>
+    </section>
+
+    <section class="charts">
+      <div class="panel chart">
+        <h3>Historical closing prices</h3>
+        <div id="historyChart"></div>
+      </div>
+      <div class="panel chart">
+        <h3>Future price forecast</h3>
+        <div id="forecastChart"></div>
+      </div>
+    </section>
+
+    <p class="muted">
+      Forecasts are estimates, not investment advice. Past performance
+      does not guarantee future results.
+    </p>
+  </main>
+
+  <script>
+    const form = document.getElementById("searchForm");
+    const status = document.getElementById("status");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const ticker = document.getElementById("ticker")
+        .value.trim().toUpperCase();
+
+      if (!/^[A-Z0-9.^=-]{1,20}$/.test(ticker)) {
+        status.textContent = "Please enter a valid ticker symbol.";
+        return;
+      }
+
+      status.textContent = "Loading data and generating forecast...";
+
+      try {
+        const response = await fetch(
+          `/api/analyze?ticker=${encodeURIComponent(ticker)}`
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || "Analysis failed.");
+        }
+
+        const dates = result.history.map(row => row.date);
+        const prices = result.history.map(row => row.close);
+
+        document.getElementById("stockTitle").textContent =
+          `${result.ticker} analysis`;
+
+        document.getElementById("summary").textContent =
+          `Latest close: ${result.last_close.toFixed(2)} | ` +
+          `Test MAE: ${result.mae.toFixed(2)}`;
+
+        Plotly.newPlot("historyChart", [{
+          x: dates,
+          y: prices,
+          type: "scatter",
+          mode: "lines",
+          name: "Historical close"
+        }], {
+          paper_bgcolor: "#141e30",
+          plot_bgcolor: "#141e30",
+          font: { color: "#edf2ff" },
+          margin: { t: 15, r: 15, b: 45, l: 55 },
+          xaxis: { title: "Date" },
+          yaxis: { title: "Price" },
+          autosize: true
+        }, { responsive: true });
+
+        const futureDates = [];
+        const lastDate = new Date(dates[dates.length - 1]);
+
+        // Approximate calendar labels for the first prototype.
+        for (let i = 1; i <= result.forecast.length; i++) {
+          const d = new Date(lastDate);
+          d.setDate(d.getDate() + i);
+          futureDates.push(d.toISOString().slice(0, 10));
+        }
+
+        Plotly.newPlot("forecastChart", [{
+          x: [dates[dates.length - 1], ...futureDates],
+          y: [result.last_close, ...result.forecast],
+          type: "scatter",
+          mode: "lines+markers",
+          name: "Estimated price"
+        }], {
+          paper_bgcolor: "#141e30",
+          plot_bgcolor: "#141e30",
+          font: { color: "#edf2ff" },
+          margin: { t: 15, r: 15, b: 45, l: 55 },
+          xaxis: { title: "Approximate date" },
+          yaxis: { title: "Price" },
+          autosize: true
+        }, { responsive: true });
+
+        status.textContent = "Analysis complete.";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    form.requestSubmit();
+  </script>
+</body>
+</html>
